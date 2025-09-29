@@ -1,32 +1,4 @@
-# Vérifier ta version de git 
-
-git --version
-
--> Si tu obtiens une version (par ex. git version x.xx.x), c’est bon.
-
-# Sinon, il faut installer git :
-
-* Linux (Debian/Ubuntu) : sudo apt install git
-
-* MacOS : brew install git (si tu as Homebrew)
-
-* Windows : installe Git for Windows.
-
-# Déplace-toi dans le dossier où tu veux cloner le dépôt :
-
-cd /chemin/vers/mon/dossier
-
-# Cloner le dépôt
-
-Exécute :
-
-git clone https://github.com/bouya4a-commits/surveillance_reseau_local.git
-
-# Vérifier le dossier cloné
-
-cd surveillance_reseau_local
-
-ls -la   # (ou dir sous Windows)
+# INSTALLATION
 
 # Activer l'environnement
 
@@ -43,12 +15,47 @@ sudo python3 app.py
 
 
 
-# Vérifier l’état de ton dépôt
+
+
+# Travailler en local : 
+
+# Version de git 
+
+git --version
+
+-> Si git version x.xx.x, c’est bon.
+
+# Sinon, il faut installer git :
+
+* Linux (Debian/Ubuntu) : sudo apt install git
+
+* MacOS : brew install git (si tu as Homebrew)
+
+* Windows : installe Git for Windows.
+
+# Se déplacer dans le dossier où cloner le dépôt :
+
+cd /chemin/vers/mon/dossier
+
+# Cloner le dépôt
+
+Exécute :
+
+git clone https://github.com/bouya4a-commits/surveillance_reseau_local.git
+
+# Vérifier le dossier cloné
+
+cd surveillance_reseau_local
+
+ls -la   # (ou dir sous Windows)
+
+
+
+# Vérifier l’état du dépôt
 
 Avant de faire un git pull, pour voir si le dépôt est à jour :
 
 git status
-
 
 Si “Your branch is up to date” → rien à faire.
 
