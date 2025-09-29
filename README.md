@@ -1,6 +1,7 @@
 
 # Activer l'environnement (si nécessaire)
 python3 -m venv forensic_env
+
 source forensic_env/bin/activate
 
 # Installer les dépendances
