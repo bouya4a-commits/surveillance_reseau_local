@@ -23,12 +23,12 @@ git --version
 
 -> Si git version x.xx.x, c’est bon.
 
-# Sinon, il faut installer git :
+# Sinon, installer git :
 
-* Linux (Debian/Ubuntu) : sudo apt install git
+* Linux : sudo apt install git
 
-* MacOS : brew install git (si tu as Homebrew)
-
+* MacOS : brew install git
+  
 * Windows : installe Git for Windows.
 
 # Se déplacer dans le dossier où cloner le dépôt :
