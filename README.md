@@ -56,14 +56,14 @@ Si modifications locales, il faudra soit les committer avant, soit les stocker t
 
 Si modifié des fichiers en local
 
-# Pour sauvegarder tes changements avant d’actualiser :
+# Pour sauvegarder les changements avant d’actualiser :
 
 git add .
-git commit -m "Mes modifications"
+git commit -m "Mes modifs"
 git pull
 
 
-# Si mettre de côté des changements temporairement :
+# Si besoin de mettre de côté les changements temporairement :
 
 git stash
 git pull
