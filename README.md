@@ -57,12 +57,14 @@ Si “Your branch is up to date” → rien à faire.
 
 Si modifications locales, il faudra soit les committer avant, soit les stocker temporairement (stash).
 
-Si modifié des fichiers en local
+
 
 # Pour sauvegarder les changements avant d’actualiser :
 
 git add .
+
 git commit -m "Mes modifs"
+
 git pull
 
 
