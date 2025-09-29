@@ -14,12 +14,10 @@ sudo python3 app.py
 
 
 
-#
-#
+##
+##
 
 # Travailler en local : 
-
-# Version de git 
 
 git --version
 
