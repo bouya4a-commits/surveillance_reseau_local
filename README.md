@@ -71,5 +71,7 @@ git pull
 # Si besoin de mettre de côté les changements temporairement :
 
 git stash
+
 git pull
+
 git stash pop
