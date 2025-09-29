@@ -39,3 +39,32 @@ pip install flask psutil
 
 # Lancer le soft
 sudo python3 app.py         
+
+
+
+
+# Vérifier l’état de ton dépôt
+
+Avant de faire un git pull, pour voir si le dépôt est à jour :
+
+git status
+
+
+Si “Your branch is up to date” → rien à faire.
+
+Si modifications locales, il faudra soit les committer avant, soit les stocker temporairement (stash).
+
+Si modifié des fichiers en local
+
+# Pour sauvegarder tes changements avant d’actualiser :
+
+git add .
+git commit -m "Mes modifications"
+git pull
+
+
+# Si mettre de côté des changements temporairement :
+
+git stash
+git pull
+git stash pop
