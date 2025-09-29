@@ -1,5 +1,5 @@
 
-# Activer l'environnement (si nécessaire)
+# Activer l'environnement
 python3 -m venv forensic_env
 
 source forensic_env/bin/activate
