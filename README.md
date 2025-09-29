@@ -2,7 +2,7 @@
 
 git --version
 
--> Si tu obtiens une version (par ex. git version 2.39.3), c’est bon.
+-> Si tu obtiens une version (par ex. git version x.xx.x), c’est bon.
 
 # Sinon, il faut installer git :
 
