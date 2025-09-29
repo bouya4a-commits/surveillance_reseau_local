@@ -35,9 +35,7 @@ git --version
 
 cd /chemin/vers/mon/dossier
 
-# Cloner le dépôt
-
-Exécute :
+# Le cloner
 
 git clone https://github.com/bouya4a-commits/surveillance_reseau_local.git
 
