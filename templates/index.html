@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>🔍 Network Forensic Monitor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        .child-row {
+            background-color: #f9f9f9 !important;
+        }
+        .child-row.suspicious {
+            background-color: #3a0000 !important;
+            color: #ffaaaa !important;
+        }
+        .suspicious {
+            background-color: #2a2a2a !important;
+            color: #ff9999 !important;
+        }
+        .ignored {
+            opacity: 0.6;
+        }
+        @keyframes blink-suspicious {
+            0%, 100% { background-color: #2a2a2a; color: #ff9999; }
+            50% { background-color: #ff0000; color: white; }
+        }
+        .suspicious-blink {
+            animation: blink-suspicious 1.5s ease-in-out 3;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Network Forensic Monitor</h1>
+
+    <div class="controls">
+        <label>Vue: 
+            <select id="viewMode" onchange="toggleViewMode()">
+                <option value="reduced" selected>Réduite</option>
+                <option value="full">Complète</option>
+            </select>
+        </label>
+        <label>Timer popup (min): 
+            <input type="number" id="popupTimerInput" min="1" max="60" value="5" style="width:60px;">
+        </label>
+        <button class="btn-primary" onclick="refresh()">🔄 Actualiser</button>
+        <button class="btn-success" onclick="saveCapture()">💾 Sauvegarder</button>
+        <select id="captureSelect" onchange="loadCapture(this.value)">
+            <option value="">— Sélectionner une capture —</option>
+            {% for file in captures %}
+            <option value="{{ file }}">{{ file }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn-info" onclick="showMaliciousIPs()">👁️ Voir IPs malveillantes</button>
+        <button class="btn-secondary" onclick="reloadMaliciousIPs()">🔃 Recharger IPs</button>
+        <button class="btn-warning" onclick="compare()">↔️ Comparer avec actuel</button>
+        <button class="btn-danger" onclick="clearIgnored()">🗑️ Réinitialiser marquages</button>
+    </div>
+
+    <table id="connTable">
+        <thead>
+            <tr>
+                <th>PID</th>
+                <th>Processus</th>
+                <th>Protocole</th>
+                <th>Local</th>
+                <th>Remote</th>
+                <th>Status</th>
+                <th>Famille</th>
+                <th>Information</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="connBody">
+        </tbody>
+    </table>
+
+    <div style="margin-top: 30px; padding: 10px; background:#f9f9f9; border-radius:6px; font-size:0.9em;">
+        <strong>Dernières adresses IP ajoutées à full-aa.txt :</strong>
+        <div id="lastMaliciousIPs">Chargement...</div>
+    </div>
+</div>
+
+<script>
+let currentData = [];
+let ignoredSet = new Set(JSON.parse(localStorage.getItem('ignoredConns') || '[]'));
+let lastPopupTime = 0;
+let popupTimerMinutes = 5;
+let viewMode = 'reduced';
+
+function groupConnectionsByProcess(conns) {
+    const groups = {};
+    conns.forEach(conn => {
+        if (conn.error) return;
+        const name = conn.process || 'unknown';
+        if (!groups[name]) {
+            groups[name] = {
+                process: name,
+                children: [],
+                isSuspicious: false,
+                pids: new Set()
+            };
+        }
+        groups[name].children.push(conn);
+        groups[name].pids.add(conn.pid);
+        if (conn.suspicious) {
+            groups[name].isSuspicious = true;
+        }
+    });
+    return Object.values(groups);
+}
+
+function renderTable(data) {
+    const tbody = document.getElementById('connBody');
+    tbody.innerHTML = '';
+    currentData = data;
+
+    if (viewMode === 'reduced') {
+        const groups = groupConnectionsByProcess(data);
+        groups.forEach(group => {
+            const key = `group-${btoa(encodeURIComponent(group.process))}`;
+            const isIgnored = ignoredSet.has(key);
+            const rowClass = isIgnored ? 'ignored' : (group.isSuspicious ? 'suspicious' : '');
+
+            const row = document.createElement('tr');
+            row.className = rowClass;
+            row.dataset.key = key;
+            row.style.cursor = 'pointer';
+            row.innerHTML = `
+                <td>${Array.from(group.pids).join(', ')}</td>
+                <td><strong>${escapeHtml(group.process)}</strong> (${group.children.length} flux)</td>
+                <td colspan="5" style="text-align:center;">Cliquez pour dérouler</td>
+                <td>
+                    <a href="#" onclick="showInfo('${escapeHtml(group.process)}', ${group.isSuspicious}, event)" 
+                       style="color:${group.isSuspicious ? '#ff4444' : '#1e88e5'}; text-decoration:underline;">
+                        ℹ️ ${group.isSuspicious ? '⚠️' : 'Info'}
+                    </a>
+                </td>
+                <td>
+                    <button onclick="toggleIgnore('${key}'); event.stopPropagation();" 
+                            class="btn-${isIgnored ? 'success' : 'warning'}" 
+                            title="${isIgnored ? 'Dégriser' : 'Griser (ignorer)'}">
+                        ${isIgnored ? '✓' : '➖'}
+                    </button>
+                </td>
+            `;
+            row.addEventListener('click', () => toggleGroup(row, group.children));
+            tbody.appendChild(row);
+        });
+    } else {
+        data.forEach(conn => {
+            if (conn.error) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td colspan="9" style="color:red;">${escapeHtml(conn.error)}</td>`;
+                tbody.appendChild(tr);
+                return;
+            }
+            const key = `${conn.pid}-${conn.local_address}-${conn.remote_address}`;
+            const isIgnored = ignoredSet.has(key);
+            const rowClass = isIgnored ? 'ignored' : (conn.suspicious ? 'suspicious' : '');
+            const processName = conn.process || 'unknown';
+
+            const tr = document.createElement('tr');
+            tr.className = rowClass;
+            tr.dataset.key = key;
+            tr.innerHTML = `
+                <td>${conn.pid || 'N/A'}</td>
+                <td>${escapeHtml(conn.process)}</td>
+                <td>${conn.protocol}</td>
+                <td>${conn.local_address}</td>
+                <td>${conn.remote_address}</td>
+                <td><span class="status">${conn.status}</span></td>
+                <td>${conn.family}</td>
+                <td>
+                    <a href="#" onclick="showInfo('${escapeHtml(processName)}', ${conn.suspicious}, event)" 
+                       style="color:${conn.suspicious ? '#ff4444' : '#1e88e5'}; text-decoration:underline;">
+                        ℹ️ ${conn.suspicious ? '⚠️' : 'Info'}
+                    </a>
+                </td>
+                <td>
+                    <button onclick="toggleIgnore('${key}')" class="btn-${isIgnored ? 'success' : 'warning'}">
+                        ${isIgnored ? '✓' : '➖'}
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+}
+
+function toggleGroup(row, children) {
+    // Supprimer les lignes enfants existantes
+    let next = row.nextSibling;
+    while (next && next.classList.contains('child-row')) {
+        const toRemove = next;
+        next = next.nextSibling;
+        toRemove.remove();
+    }
+
+    // Ajouter les enfants
+    children.forEach(child => {
+        const key = `${child.pid}-${child.local_address}-${child.remote_address}`;
+        const isIgnored = ignoredSet.has(key);
+        const rowClass = 'child-row ' + (isIgnored ? 'ignored' : (child.suspicious ? 'suspicious' : ''));
+
+        const tr = document.createElement('tr');
+        tr.className = rowClass;
+        tr.innerHTML = `
+            <td>${child.pid || 'N/A'}</td>
+            <td>↳ ${escapeHtml(child.process)}</td>
+            <td>${child.protocol}</td>
+            <td>${child.local_address}</td>
+            <td>${child.remote_address}</td>
+            <td><span class="status">${child.status}</span></td>
+            <td>${child.family}</td>
+            <td>
+                <a href="#" onclick="showInfo('${escapeHtml(child.process)}', ${child.suspicious}, event)" 
+                   style="color:${child.suspicious ? '#ff4444' : '#1e88e5'}; text-decoration:underline;">
+                    ℹ️ ${child.suspicious ? '⚠️' : 'Info'}
+                </a>
+            </td>
+            <td>
+                <button onclick="toggleIgnore('${key}')" class="btn-${isIgnored ? 'success' : 'warning'}">
+                    ${isIgnored ? '✓' : '➖'}
+                </button>
+            </td>
+        `;
+        row.parentNode.insertBefore(tr, row.nextSibling);
+    });
+}
+
+function escapeHtml(text) {
+    if (typeof text !== 'string') return String(text);
+    return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "<")
+        .replace(/>/g, ">")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function showInfo(processName, isSuspicious, event) {
+    event.preventDefault();
+    if (isSuspicious) {
+        alert("🚨 Adresse IP malveillante détectée !\nContactez immédiatement votre support informatique.");
+    } else {
+        const query = encodeURIComponent(`${processName} process purpose`);
+        window.open(`https://www.google.com/search?q=${query}`, '_blank');
+    }
+}
+
+function toggleIgnore(key) {
+    if (ignoredSet.has(key)) {
+        ignoredSet.delete(key);
+    } else {
+        ignoredSet.add(key);
+    }
+    localStorage.setItem('ignoredConns', JSON.stringify([...ignoredSet]));
+    refresh();
+}
+
+function toggleViewMode() {
+    viewMode = document.getElementById('viewMode').value;
+    refresh();
+}
+
+// === Fonctions de base ===
+function refresh() {
+    fetch('/api/connections')
+        .then(response => response.json())
+        .then(data => renderTable(data))
+        .catch(err => {
+            console.error("Erreur refresh:", err);
+            document.getElementById('connBody').innerHTML = `<tr><td colspan="9" style="color:red;">Erreur de chargement</td></tr>`;
+        });
+}
+
+function saveCapture() {
+    fetch('/api/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ currentData})
+    })
+    .then(response => response.json())
+    .then(resp => {
+        if (resp.filename) {
+            alert('Sauvegardé : ' + resp.filename);
+            updateCaptureList();
+        }
+    });
+}
+
+function updateCaptureList() {
+    fetch('/api/captures')
+        .then(response => response.json())
+        .then(files => {
+            const select = document.getElementById('captureSelect');
+            const current = select.value;
+            select.innerHTML = '<option value="">— Sélectionner une capture —</option>';
+            files.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.textContent = f;
+                select.appendChild(opt);
+            });
+            if (current) select.value = current;
+        });
+}
+
+function loadCapture(filename) {
+    if (!filename) return;
+    fetch(`/api/load/${filename}`)
+        .then(response => response.json())
+        .then(data => renderTable(data));
+}
+
+function clearIgnored() {
+    ignoredSet.clear();
+    localStorage.removeItem('ignoredConns');
+    refresh();
+}
+
+function showMaliciousIPs() {
+    fetch('/api/malicious-ips')
+        .then(response => response.json())
+        .then(data => {
+            const popup = document.createElement('div');
+            popup.id = 'maliciousIPsPopup';
+            popup.style.cssText = `
+                position: fixed;
+                top: 20%;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 11000;
+                background: white;
+                color: black;
+                padding: 20px;
+                border: 2px solid #444;
+                border-radius: 8px;
+                max-width: 90%;
+                max-height: 70vh;
+                overflow: auto;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+                font-family: Arial, sans-serif;
+            `;
+            const ipsList = data.ips.slice(0, 200).join('<br>');
+            popup.innerHTML = `
+                <h3>IPs malveillantes (${data.count} au total)</h3>
+                <p><em>Premières 200 IPs :</em></p>
+                <div style="font-family: monospace; font-size:0.9em; max-height:300px; overflow:auto;">${ipsList}</div>
+                <button onclick="this.parentElement.remove()" style="margin-top:15px; padding:6px 12px; background:#666; color:white; border:none; border-radius:4px; cursor:pointer;">
+                    Fermer
+                </button>
+            `;
+            document.body.appendChild(popup);
+        })
+        .catch(() => alert("Erreur lors du chargement des IPs."));
+}
+
+function reloadMaliciousIPs() {
+    fetch('/api/reload-malicious-ips', { method: 'POST' })
+        .then(() => {
+            alert("✅ Liste des IPs malveillantes rechargée !");
+            fetch('/api/malicious-ips')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('lastMaliciousIPs').textContent = data.last_added.join(', ') || 'Aucune';
+                });
+        })
+        .catch(() => alert("❌ Échec du rechargement."));
+}
+
+// === Popup alertes ===
+let suspiciousPopupTimeout = null;
+
+function showSuspiciousPopup(alerts) {
+    const filteredAlerts = alerts.filter(conn => {
+        const key = `group-${btoa(encodeURIComponent(conn.process))}`;
+        return !ignoredSet.has(key);
+    });
+
+    if (filteredAlerts.length === 0) return;
+
+    dismissSuspiciousPopup();
+
+    const popup = document.createElement('div');
+    popup.id = 'suspiciousPopup';
+    popup.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 10000;
+        background: #2a2a2a;
+        color: #ff9999;
+        padding: 15px;
+        border: 2px solid #ff4444;
+        border-radius: 8px;
+        max-width: 500px;
+        font-family: Arial, sans-serif;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    `;
+    popup.innerHTML = `
+        <h3 style="margin-top:0; color:#ff6666;">⚠️ Flux suspects détectés</h3>
+        <ul style="max-height:200px; overflow-y:auto; margin:10px 0; padding-left:20px;">
+            ${filteredAlerts.map(a => `<li><strong>${escapeHtml(a.process)}</strong> → ${a.remote_address}</li>`).join('')}
+        </ul>
+        <button onclick="dismissSuspiciousPopup()" style="
+            margin-top:10px;
+            padding:6px 12px;
+            background:#ff4444;
+            color:white;
+            border:none;
+            border-radius:4px;
+            cursor:pointer;
+            font-weight:bold;
+        ">
+            ✅ J'ai vu (fermer)
+        </button>
+    `;
+    document.body.appendChild(popup);
+
+    const ms = popupTimerMinutes * 60 * 1000;
+    suspiciousPopupTimeout = setTimeout(() => {
+        dismissSuspiciousPopup();
+    }, ms);
+}
+
+function dismissSuspiciousPopup() {
+    const popup = document.getElementById('suspiciousPopup');
+    if (popup) popup.remove();
+    if (suspiciousPopupTimeout) {
+        clearTimeout(suspiciousPopupTimeout);
+        suspiciousPopupTimeout = null;
+    }
+}
+
+// === Chargement initial ===
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('/api/malicious-ips')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('lastMaliciousIPs').textContent = data.last_added.join(', ') || 'Aucune';
+        })
+        .catch(() => {
+            document.getElementById('lastMaliciousIPs').textContent = "Erreur";
+        });
+
+    refresh();
+    updateCaptureList();
+
+    document.getElementById('popupTimerInput').addEventListener('change', (e) => {
+        popupTimerMinutes = parseInt(e.target.value) || 5;
+    });
+
+    setInterval(() => {
+        const now = Date.now();
+        const minDelay = popupTimerMinutes * 60 * 1000;
+        if (now - lastPopupTime < minDelay) return;
+
+        fetch('/api/alerts')
+            .then(response => response.json())
+            .then(alerts => {
+                const hasUnignored = alerts.some(conn => {
+                    const key = `group-${btoa(encodeURIComponent(conn.process))}`;
+                    return !ignoredSet.has(key);
+                });
+                if (hasUnignored) {
+                    lastPopupTime = now;
+                    showSuspiciousPopup(alerts);
+                }
+            })
+            .catch(err => console.warn("Erreur alertes:", err));
+    }, 30000);
+});
+</script>
+</body>
+</html>
